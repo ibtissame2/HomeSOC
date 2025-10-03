@@ -34,3 +34,5 @@
 {"timestamp": "2025-10-03 21:40:36.874952", "alert": "Port scan detected from 127.0.0.1", "packet_num": 298}
 {"timestamp": "2025-10-03 21:40:36.875591", "alert": "Port scan detected from 127.0.0.1", "packet_num": 299}
 {"timestamp": "2025-10-03 21:40:36.875691", "alert": "Port scan detected from 127.0.0.1", "packet_num": 300}
+{"timestamp": "2025-10-03 23:50:37.220808", "alert": "PORT_SCAN from 10.0.3.15 - 11 different ports in 60s", "packet_num": 68}
+{"timestamp": "2025-10-03 23:50:37.322071", "alert": "PORT_SCAN from 10.0.3.15 - 11 different ports in 60s", "packet_num": 69}

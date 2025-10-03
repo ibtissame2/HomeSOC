@@ -1,128 +1,180 @@
 #!/usr/bin/env python3
-import struct
-import socket
+from scapy.all import *
 import json
 import datetime
 from collections import defaultdict
 import time
+import sys
 
-class NetworkMonitor:
-    def __init__(self, interface=None):
-        self.interface = interface
+class EnhancedNetworkMonitor:
+    def __init__(self):
         self.suspicious_ips = []
         self.packet_count = 0
         self.connection_attempts = defaultdict(list)
+        self.dns_queries = defaultdict(list)
+        self.start_time = time.time()
+    
+    def find_working_interface(self):
+        """Trouve une interface qui fonctionne"""
+        interfaces = get_if_list()
         
-    def get_mac_addr(self, bytes_addr):
-        """Convert bytes MAC address to readable format"""
-        bytes_str = map("{:02x}".format, bytes_addr)
-        return ':'.join(bytes_str).upper()
-
-    def get_ipv4(self, addr):
-        """Convert bytes IP to string"""
-        return '.'.join(map(str, addr))
-
-    def parse_frame(self, frame):
-        """Parse Ethernet frame"""
-        eth_len = 14
-        eth_header = frame[:eth_len]
-        eth_data = frame[eth_len:]
-        dest_mac, src_mac, proto_field1, proto_field2 = struct.unpack('!6s6scc', eth_header)
+        print("Interfaces disponibles:")
+        for iface in interfaces:
+            print(f"  - {iface}")
         
-        dest_mac = self.get_mac_addr(dest_mac)
-        src_mac = self.get_mac_addr(src_mac)
-
-        proto1 = ''.join(map(str, proto_field1))
-        proto2 = ''.join(map(str, proto_field2))
-        proto = proto1 + proto2
+        # Préférer enp0s8 car c'est l'interface par défaut (voir ip route)
+        preferred = ['enp0s8', 'enp0s3']  # enp0s8 est l'interface par défaut
         
-        if proto == '80':
-            ip_proto = 'IPv4'
-        elif proto == '86':
-            ip_proto = 'ARP'
-        elif proto == '86DD':
-            ip_proto = 'IPv6'
-        else:
-            ip_proto = proto
+        for iface in preferred:
+            if iface in interfaces:
+                print(f"Trying preferred interface: {iface}")
+                try:
+                    sniff(iface=iface, count=1, timeout=2)
+                    print(f"Interface {iface} is working")
+                    return iface
+                except Exception as e:
+                    print(f"Interface {iface} failed: {e}")
+                    continue
+        
+        # Essayer toutes les interfaces
+        for iface in interfaces:
+            if iface != 'lo':
+                print(f"Trying interface: {iface}")
+                try:
+                    sniff(iface=iface, count=1, timeout=2)
+                    print(f"Interface {iface} is working")
+                    return iface
+                except:
+                    continue
+        
+        return None
+    
+    def packet_callback(self, packet):
+        """Callback function for Scapy sniffing"""
+        self.packet_count += 1
+        
+        # Afficher un résumé du paquet
+        if self.packet_count % 50 == 0:
+            elapsed = time.time() - self.start_time
+            print(f"\n[{datetime.datetime.now().strftime('%H:%M:%S')}] Packets: {self.packet_count} | Rate: {self.packet_count/elapsed:.1f} pkt/s")
+        
+        if packet.haslayer(IP):
+            src_ip = packet[IP].src
+            dst_ip = packet[IP].dst
+            proto = packet[IP].proto
             
-        return eth_data, ip_proto, src_mac, dest_mac
-
-    def parse_packet(self, packet):
-        """Parse IP packet"""
-        first_byte = packet[0]
-        ip_version = first_byte >> 4
-        ip_header_length = (first_byte & 15) * 4
-
-        ttl, proto, src, dest = struct.unpack('!8xBB2x4s4s', packet[:20])
-        src_ip = self.get_ipv4(src)
-        dest_ip = self.get_ipv4(dest)
-
-        if proto == 1:
-            transport_proto = 'ICMP'
-        elif proto == 6:
-            transport_proto = 'TCP'
-        elif proto == 17:
-            transport_proto = 'UDP'
-        else:
-            transport_proto = f'Unknown({proto})'
-
-        return packet[ip_header_length:], transport_proto, src_ip, dest_ip, ttl
-
-    def parse_TCP(self, data):
-        """Parse TCP segment"""
-        src_port, dest_port, seq, ack, offset_flags = struct.unpack('!HHLLH', data[:14])
-        tcp_header_length = (offset_flags >> 12) * 4
-
-        # Extract flags
-        flag_urg = (offset_flags & 32) >> 5
-        flag_ack = (offset_flags & 16) >> 4
-        flag_psh = (offset_flags & 8) >> 3
-        flag_rst = (offset_flags & 4) >> 2
-        flag_syn = (offset_flags & 2) >> 1
-        flag_fin = offset_flags & 1
-
-        return {
-            'src_port': src_port,
-            'dest_port': dest_port,
-            'flags': {
-                'syn': flag_syn,
-                'ack': flag_ack,
-                'fin': flag_fin,
-                'rst': flag_rst
-            },
-            'header_length': tcp_header_length
-        }
-
-    def is_suspicious(self, src_ip, dest_port, transport_proto, tcp_data=None):
-        """Detect suspicious patterns"""
-        alerts = []
-        
-        # Port scanning detection
-        if transport_proto == 'TCP' and tcp_data and tcp_data['flags']['syn']:
+            # Afficher les paquets intéressants
+            if packet.haslayer(TCP) or packet.haslayer(UDP) or packet.haslayer(DNS):
+                self.print_packet_summary(packet)
+            
+            # Détection de scans de ports TCP
+            if packet.haslayer(TCP):
+                self.detect_port_scan(src_ip, packet[TCP])
+            
+            # Détection de tunnels DNS
+            if packet.haslayer(DNSQR):
+                self.detect_dns_tunnel(src_ip, packet[DNSQR])
+            
+            # Détection ICMP suspect (ping floods)
+            if packet.haslayer(ICMP):
+                self.detect_icmp_flood(src_ip)
+    
+    def print_packet_summary(self, packet):
+        """Affiche un résumé du paquet"""
+        try:
+            if packet.haslayer(IP):
+                src_ip = packet[IP].src
+                dst_ip = packet[IP].dst
+                
+                if packet.haslayer(TCP):
+                    sport = packet[TCP].sport
+                    dport = packet[TCP].dport
+                    flags = packet[TCP].flags
+                    print(f"TCP  {src_ip}:{sport} -> {dst_ip}:{dport} [{flags}]")
+                
+                elif packet.haslayer(UDP):
+                    sport = packet[UDP].sport
+                    dport = packet[UDP].dport
+                    print(f"UDP  {src_ip}:{sport} -> {dst_ip}:{dport}")
+                
+                elif packet.haslayer(DNSQR):
+                    query = packet[DNSQR].qname.decode('utf-8', errors='ignore')
+                    print(f"DNS  {src_ip} -> {dst_ip} : {query[:50]}")
+                
+                elif packet.haslayer(ICMP):
+                    print(f"ICMP {src_ip} -> {dst_ip}")
+                    
+        except Exception as e:
+            # Ignorer les erreurs d'affichage
+            pass
+    
+    def detect_port_scan(self, src_ip, tcp_layer):
+        """Détection de scans de ports"""
+        if hasattr(tcp_layer, 'flags') and tcp_layer.flags == 'S':  # SYN seulement
             current_time = time.time()
+            dst_port = tcp_layer.dport
             
-            # Clean old entries
+            # Nettoyage des anciennes entrées
             self.connection_attempts[src_ip] = [
-                t for t in self.connection_attempts[src_ip]
-                if current_time - t < 60  # 60 second window
+                (t, port) for t, port in self.connection_attempts[src_ip] 
+                if current_time - t < 60
             ]
             
-            # Add new attempt
-            self.connection_attempts[src_ip].append(current_time)
+            # Ajout de la nouvelle tentative
+            self.connection_attempts[src_ip].append((current_time, dst_port))
             
-            # Check if threshold exceeded (10 attempts in 60 seconds)
-            if len(self.connection_attempts[src_ip]) > 10:
-                alerts.append(f"Port scan detected from {src_ip}")
+            # Vérifier le nombre de ports différents
+            unique_ports = len(set(port for _, port in self.connection_attempts[src_ip]))
+            
+            if unique_ports > 10:
+                alert = f"PORT_SCAN from {src_ip} - {unique_ports} different ports in 60s"
+                self.log_alert(alert)
+    
+    def detect_dns_tunnel(self, src_ip, dns_layer):
+        """Détection de tunnels DNS"""
+        if hasattr(dns_layer, 'qname'):
+            try:
+                domain = dns_layer.qname.decode('utf-8', errors='ignore')
+                
+                # Détection basée sur la longueur du domaine
+                if len(domain) > 100:
+                    alert = f"DNS_TUNNEL_SUSPECT from {src_ip} - Domain length: {len(domain)}"
+                    self.log_alert(alert)
+                
+                # Détection de domaines étranges
+                if any(suspicious in domain.lower() for suspicious in 
+                       ['.ddns.net', '.duckdns.org', '.no-ip.org', '.myftp.org']):
+                    alert = f"DYNAMIC_DNS_QUERY from {src_ip} - {domain[:50]}"
+                    self.log_alert(alert)
+                
+                # Surveillance de la fréquence
+                current_time = time.time()
+                self.dns_queries[src_ip].append(current_time)
+                
+                # Nettoyage des anciennes requêtes
+                self.dns_queries[src_ip] = [
+                    t for t in self.dns_queries[src_ip] 
+                    if current_time - t < 10
+                ]
+                
+                # Trop de requêtes DNS
+                if len(self.dns_queries[src_ip]) > 30:
+                    alert = f"DNS_FLOOD from {src_ip} - {len(self.dns_queries[src_ip])} queries in 10s"
+                    self.log_alert(alert)
+                    
+            except Exception as e:
+                pass
+    
+    def detect_icmp_flood(self, src_ip):
+        """Détection de flood ICMP"""
+        current_time = time.time()
         
-        # Suspicious port detection
-        suspicious_ports = [22, 23, 3389, 1433, 3306]  # SSH, Telnet, RDP, SQL
-        if dest_port in suspicious_ports and transport_proto == 'TCP':
-            alerts.append(f"Suspicious connection to port {dest_port} from {src_ip}")
-            
-        return alerts
-
+        # Similaire aux autres détections, mais pour ICMP
+        # Implémentation simplifiée
+        pass
+    
     def log_alert(self, alert_data):
-        """Log suspicious activity to JSON file"""
+        """Log les alertes en JSON"""
         log_entry = {
             'timestamp': str(datetime.datetime.now()),
             'alert': alert_data,
@@ -130,68 +182,61 @@ class NetworkMonitor:
         }
         
         try:
-            with open('../logs/alerts.json', 'a', encoding='utf-8') as f:
-                json.dump(log_entry, f, ensure_ascii=False)
+            # Créer le dossier logs s'il n'existe pas
+            import os
+            os.makedirs('/home/ubuntu/HomeSOC/logs', exist_ok=True)
+            
+            with open('/home/ubuntu/HomeSOC/logs/alerts.json', 'a') as f:
+                json.dump(log_entry, f)
                 f.write('\n')
             print(f"ALERT: {alert_data}")
         except Exception as e:
             print(f"Error writing alert: {e}")
-
+    
     def start_monitoring(self):
-        """Start packet capture"""
-        print(f"Starting network monitoring...")
+        """Démarre la surveillance"""
+        print("Finding network interface...")
+        
+        interface = self.find_working_interface()
+        
+        if interface is None:
+            print("ERROR: No working interface found!")
+            sys.exit(1)
+        
+        print(f"Starting monitoring on interface: {interface}")
+        print(" Monitoring started. Press Ctrl+C to stop.")
+        print("=" * 60)
         
         try:
-            # Create raw socket
-            conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
+            # Commencer la capture
+            sniff(iface=interface, prn=self.packet_callback, store=False)
             
-            while True:
-                # Receive Ethernet frame
-                payload, addr = conn.recvfrom(65535)
-                self.packet_count += 1
-                
-                try:
-                    # Parse frames
-                    ip_packet, ip_protocol, src_mac, dest_mac = self.parse_frame(payload)
-                    
-                    if ip_protocol == 'IPv4':
-                        # Parse IP packet
-                        transport_packet, transport_proto, src_ip, dest_ip, ttl = self.parse_packet(ip_packet)
-                        
-                        # Parse TCP if applicable
-                        tcp_data = None
-                        dest_port = None
-                        
-                        if transport_proto == 'TCP':
-                            tcp_data = self.parse_TCP(transport_packet)
-                            dest_port = tcp_data['dest_port']
-                            
-                            # Check for suspicious activity
-                            alerts = self.is_suspicious(src_ip, dest_port, transport_proto, tcp_data)
-                            for alert in alerts:
-                                self.log_alert(alert)
-                                
-                        # Log every 100 packets for debugging
-                        if self.packet_count % 100 == 0:
-                            print(f"📦 Packets processed: {self.packet_count}")
-                            
-                except Exception as e:
-                    # Continue monitoring even if one packet fails
-                    continue
-                    
-        except PermissionError:
-            print("ERROR: Permission denied. Run with sudo!")
         except KeyboardInterrupt:
-            print("\nMonitoring stopped by user")
+            print(f"Monitoring stopped. Total packets processed: {self.packet_count}")
         except Exception as e:
-            print(f"ERROR: {e}")
+            print(f"Monitoring error: {e}")
 
 def main():
-    """Main function"""
-    print("HomeSOC Network Monitor")
-    print("=" * 30)
+    """Fonction principale"""
+    print(" Enhanced Network Monitor with Scapy")
+    print("=" * 50)
     
-    monitor = NetworkMonitor()
+    # Vérifier les privilèges
+    import os
+    if os.geteuid() != 0:
+        print("ERROR: This script requires root privileges!")
+        print("Please run with: sudo python3 packet_sniffer.py")
+        sys.exit(1)
+    
+    # Vérifier que Scapy est installé
+    try:
+        import scapy
+    except ImportError:
+        print("ERROR: Scapy is not installed!")
+        print("Install with: sudo pip3 install scapy")
+        sys.exit(1)
+    
+    monitor = EnhancedNetworkMonitor()
     monitor.start_monitoring()
 
 if __name__ == "__main__":
