@@ -1,0 +1,27 @@
+{
+    "target": "127.0.0.1",
+    "scan_time": "2025-10-05 21:02:25.763177",
+    "open_ports": [
+        {
+            "port": 22,
+            "service": "SSH",
+            "status": "OPEN"
+        },
+        {
+            "port": 53,
+            "service": "DNS",
+            "status": "OPEN"
+        },
+        {
+            "port": 80,
+            "service": "HTTP",
+            "status": "OPEN"
+        },
+        {
+            "port": 8080,
+            "service": "HTTP-Alt",
+            "status": "OPEN"
+        }
+    ],
+    "total_open": 4
+}
