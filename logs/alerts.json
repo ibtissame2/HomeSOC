@@ -36,3 +36,6 @@
 {"timestamp": "2025-10-03 21:40:36.875691", "alert": "Port scan detected from 127.0.0.1", "packet_num": 300}
 {"timestamp": "2025-10-03 23:50:37.220808", "alert": "PORT_SCAN from 10.0.3.15 - 11 different ports in 60s", "packet_num": 68}
 {"timestamp": "2025-10-03 23:50:37.322071", "alert": "PORT_SCAN from 10.0.3.15 - 11 different ports in 60s", "packet_num": 69}
+{"timestamp": "2025-10-05 14:39:07.846628", "alert": "ALERT: PORT_SCAN from 192.168.2.10 - 3 different ports in 30s", "packet_num": 127, "alert_id": 1}
+{"timestamp": "2025-10-05 14:39:07.849399", "alert": "ALERT: PORT_SCAN from 192.168.2.10 - 3 different ports in 30s", "packet_num": 134, "alert_id": 2}
+{"timestamp": "2025-10-05 14:39:07.851291", "alert": "ALERT: PORT_SCAN from 192.168.2.10 - 3 different ports in 30s", "packet_num": 139, "alert_id": 3}
