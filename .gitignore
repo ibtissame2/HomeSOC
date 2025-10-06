@@ -1,0 +1,27 @@
+# Logs
+logs/alerts.json
+logs/scan_report.json
+
+# Elasticsearch data
+siem/esdata/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
