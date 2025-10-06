@@ -118,16 +118,6 @@ Ibtissame HSINI
 
 LinkedIn: Ibtissame HSINI
 
-GitHub: @IbtissameHsini
+GitHub: @Ibtissame2
 
-### **Étape 3 : CRÉER LES AUTRES FICHIERS ESSENTIELS**
 
-**requirements.txt :**
-```bash
-cat > requirements.txt << 'EOF'
-scapy==2.4.5
-pandas==1.5.3
-requests==2.28.2
-elasticsearch==8.5.0
-flask==2.2.3
-python-nmap==0.7.1
