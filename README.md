@@ -1,6 +1,6 @@
 # 🛡️ HomeSOC - Home Security Operations Center
 
-![HomeSOC Architecture](docs/images/architecture.png)
+[![HomeSOC Architecture](docs/images/architecture.png)](https://github.com/ibtissame2/HomeSOC/blob/3ea1f00e2f86bd63839942a18b95d7dd8a792afd/Screenshot%202025-10-06%20200611.png)
 
 ## 📋 Overview
 HomeSOC is an integrated security monitoring system that simulates a real Security Operations Center environment. This project demonstrates practical cybersecurity skills including network monitoring, vulnerability assessment, and SIEM implementation.
